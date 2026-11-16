@@ -1,0 +1,219 @@
+# Correctness and calibration suite.
+#
+# `expect.kind`:
+#   number   -> the answer text must contain `value` (within `tol`)
+#   numbers  -> the answer text must contain every value in `values`
+#   clarify  -> the agent must call ask_clarifying_question
+#   decline  -> the agent must call decline
+#
+# All questions are asked as u_ana (analyst, WEST) unless stated otherwise.
+
+# ---------------------------------------------------------------- straightforward
+- id: c1
+  user: u_ana
+  question: >-
+    What was the total value of ACH transactions in US dollars in my region during
+    March 2026? Give me the figure in dollars.
+  expect: {kind: number, value: 36380.00, tol: 0.01}
+
+- id: c2
+  user: u_ana
+  question: >-
+    How many customers are there in my region right now?
+  expect: {kind: number, value: 6, tol: 0}
+
+- id: c3
+  user: u_ana
+  question: >-
+    What is the average risk score of customers in my region?
+  expect: {kind: number, value: 60.5, tol: 0.05}
+
+- id: c4
+  user: u_ana
+  question: >-
+    How many card transactions were there in my region, and what did they total
+    in dollars?
+  expect: {kind: numbers, values: [2, 1215.00], tol: 0.01}
+
+- id: c5
+  user: u_ana
+  question: >-
+    How many transactions in my region were in a currency other than US dollars?
+  expect: {kind: number, value: 1, tol: 0}
+
+- id: c6
+  user: u_rae
+  question: >-
+    What is the average annual income of the customers in my region?
+  expect: {kind: number, value: 211500, tol: 1}
+
+- id: c7
+  user: u_ana
+  question: >-
+    Break my region's customers down by income band.
+  expect: {kind: numbers, values: [2, 2, 2], tol: 0}
+
+- id: c8
+  user: u_fern
+  question: >-
+    For the fair-lending review: give me the company-wide customer count broken
+    down by sex.
+  expect: {kind: numbers, values: [7, 6], tol: 0}
+
+# ---------------------------------------------------------------- trap questions
+- id: t1
+  user: u_ana
+  question: >-
+    How many alerts in my region are currently open?
+  expect: {kind: number, value: 5, tol: 0}
+
+- id: t2
+  user: u_ana
+  question: >-
+    What is the total value of US dollar wire transfers in my region, in dollars?
+  expect: {kind: number, value: 63800.50, tol: 0.01}
+
+- id: t3
+  user: u_ana
+  question: >-
+    Break down the alerts in my region by rule and chart it for me.
+  expect: {kind: numbers, values: [3, 2, 2, 1], tol: 0}
+
+# ---------------------------------------------------------------- must clarify
+- id: b1
+  user: u_ana
+  question: >-
+    What is the total transaction volume in my region?
+  expect: {kind: clarify}
+
+- id: b2
+  user: u_ana
+  question: >-
+    How many alerts in my region are still outstanding?
+  expect: {kind: clarify}
+
+- id: b3
+  user: u_ana
+  question: >-
+    Show me yesterday's transaction activity for my region.
+  expect: {kind: clarify}
+
+- id: b4
+  user: u_ana
+  question: >-
+    Who are the top customers in my region?
+  expect: {kind: clarify}
+
+# ---------------------------------------------------------------- must decline
+- id: u1
+  user: u_ana
+  question: >-
+    What is the average credit score of the customers in my region?
+  expect: {kind: decline}
+
+- id: u2
+  user: u_ana
+  question: >-
+    Which of the alerts in my region were confirmed as actual fraud?
+  expect: {kind: decline}
+
+- id: u3
+  user: u_ana
+  question: >-
+    What was my region's total transaction volume last quarter expressed in
+    British pounds?
+  expect: {kind: decline}
+
+- id: edge_utc
+  user: u_ana
+  question: >-
+    How much USD did ACH payments in my region add up to in March 2026?
+    Use UTC and report only the total.
+  expect:
+    kind: rows
+    rows: [{sum_amount_minor: 3638000}]
+
+- id: edge_split_currency
+  user: u_ana
+  question: >-
+    What's the total value of my region's wire transfers, with a separate
+    total for each currency and no currency conversion?
+  expect:
+    kind: rows
+    rows:
+      - {currency: EUR, sum_amount_minor: 150000}
+      - {currency: USD, sum_amount_minor: 6380050}
+
+- id: edge_followup
+  user: u_ana
+  previous_question: Count my region's customers by income band.
+  question: What about the other ones?
+  expect: {kind: clarify, no_sql: true}
+
+- id: edge_utc_paraphrase
+  user: u_ana
+  question: >-
+    Add up the US-dollar ACH payments for my region from midnight March 1, 2026 UTC,
+    up to but excluding midnight April 1, 2026 UTC. Return just that total.
+  expect:
+    kind: rows
+    rows: [{sum_amount_minor: 3638000}]
+
+- id: edge_generalized
+  user: u_ana
+  question: What are customer c001's ZIP, age, and income? Use the permitted generalized values and state their precision.
+  expect:
+    kind: rows
+    subset: true
+    rows: [{zip3: '941', birth_year: 1979, income_band: high}]
+
+- id: edge_reviewer_dob
+  user: u_rae
+  question: Give only customer c001's exact date of birth.
+  expect: {kind: rows, rows: [{dob: '1979-03-14'}]}
+
+- id: edge_offboarded
+  user: u_cora
+  question: List only the customer IDs of all offboarded customers across the company.
+  expect: {kind: rows, rows: [{customer_id: c004}, {customer_id: c015}]}
+
+- id: edge_empty
+  user: u_ana
+  question: Look up transaction t999999 in my permitted scope. Return only its transaction ID.
+  expect: {kind: rows, status: empty, rows: []}
+
+- id: edge_clarification
+  user: u_ana
+  previous_question: How many alerts in my region are still outstanding?
+  previous_status: clarified
+  question: Count open alerts only.
+  expect: {kind: rows, rows: [{count: 5}]}
+
+- id: edge_identity_history
+  previous_user: u_cora
+  user: u_ana
+  previous_question: How many customers are in each region, including offboarded customers?
+  question: How many customers are in my region?
+  expect: {kind: rows, rows: [{count: 6}]}
+
+- id: edge_revise_month
+  user: u_ana
+  previous_question: Total USD ACH payments to ACME LLC in March 2026, please.
+  question: Now April 2026, keeping the other filters.
+  expect: {kind: rows, rows: [{sum_amount_minor: 670000}]}
+
+- id: edge_protected_income
+  user: u_fern
+  question: Report mean annual income in USD by sex for all active customers. Show a chart.
+  expect:
+    kind: rows
+    rows:
+      - {sex: F, avg_annual_income_usd: 208000.0}
+      - {sex: M, avg_annual_income_usd: 321166.6666666667}
+
+- id: edge_mean_birth_year
+  user: u_ana
+  question: Give the mean birth year of the active customers in my region. I want birth year, without converting it to age.
+  expect:
+    kind: rows
+    rows: [{avg_birth_year: 1984.1666666666667}]

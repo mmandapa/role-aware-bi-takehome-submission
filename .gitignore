@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+fraud.db
+audit.jsonl
+.env*
+.hypothesis/
+evidence/readiness/spend.lock
